@@ -39,12 +39,20 @@ succeeded; `--out` must be absent or empty):
 | 3 | every frame's energy flux is below the encoder's floor (0.01 erg cm⁻² s⁻¹) in all three types, so every frame would be blank |
 | 1 | anything else (a feed could not be fetched, `--out` not empty, …) |
 
-The GitHub Actions workflow (`.github/workflows/aurora.yml`) runs every 30
-minutes and can also be started by hand (`workflow_dispatch`). It installs requirements, runs the tests, runs `run_aurora.py --out
-site`, copies `colortable.json` into `site/` when the repo has one, and
-force-pushes `site/` as an orphan commit to `gh-pages` with the built-in
-`GITHUB_TOKEN` (the smoke pipeline's publish step). A failed run skips the
-publish, so gh-pages keeps the previous run.
+The GitHub Actions workflow (`.github/workflows/aurora.yml`) is a loop, not a
+schedule: GitHub's cron fired the old "every 30 minutes" once in the repo's
+first 12 hours (2026-11-18). One run installs requirements, runs the tests,
+then every 10 minutes for 5 hours runs `run_aurora.py --out site`, copies
+`colortable.json` into `site/` when the repo has one, and force-pushes `site/`
+as an orphan commit to `gh-pages` with the built-in `GITHUB_TOKEN`. A pass that
+writes nothing (exit 1, 2 or 3) or whose push fails publishes nothing, so
+gh-pages keeps the previous build and the next pass tries again; a run in
+which no pass published ends red. Each run then starts the next one, cancelled
+or not, so the way to stop the chain is to disable the workflow. A run started
+by hand while the loop is live waits behind it (one `aurora` run at a time).
+Two nets restart a broken chain: the workflow's own 4-hourly cron and
+`.github/workflows/aurora-watchdog.yml`, which every hour dispatches a run
+only when none is queued or running.
 
 Live run, 2026-11-18T00:55:57Z (this Mac, Python 3.11, fetch included):
 13 frames, 771,395 bytes of frames (59,338 per frame on average, 58,931–59,690),

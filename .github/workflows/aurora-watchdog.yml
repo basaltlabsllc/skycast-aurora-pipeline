@@ -1,0 +1,38 @@
+name: aurora-watchdog
+# Restarts the aurora loop when it has no live run. Each aurora run rebuilds
+# for 5 hours and then dispatches its own next run; when that dispatch fails
+# the chain would wait for aurora.yml's 4-hourly cron. Every hour this checks
+# for a run that is not completed (queued, waiting, in progress) and dispatches
+# one only when there is none. A failed listing never dispatches: no storm on
+# a GitHub outage. (The icon pipeline's loops-watchdog.yml, for this repo.)
+on:
+  schedule:
+    - cron: '13 * * * *'
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: aurora-watchdog
+  cancel-in-progress: true
+jobs:
+  watchdog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: restart the loop if it has no live run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! live=$(gh run list --workflow aurora.yml --limit 20 --json status \
+                --jq '[.[] | select(.status != "completed")] | length'); then
+            echo "listing failed, leaving it alone"
+            exit 0
+          fi
+          if [ "$live" = "0" ]; then
+            echo "::warning::aurora had no live run; restarting it"
+            gh workflow run aurora.yml --ref main || echo "dispatch failed"
+          else
+            echo "aurora: $live live"
+          fi

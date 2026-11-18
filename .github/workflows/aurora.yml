@@ -1,19 +1,29 @@
 name: aurora
+# Keeps the feed fresh without relying on GitHub's schedule: this workflow's
+# "every 30 minutes" cron fired once in the repo's first 12 hours (2026-11-18),
+# so the feed sat hours old. One run now rebuilds every 10 minutes (the frames'
+# own step) for 5 hours, publishing each build that worked, then starts the
+# next run (a workflow may dispatch workflows with its own token). The cron
+# below, and aurora-watchdog.yml, only restart the chain if it ever breaks.
+# To stop the chain, disable the workflow: a cancelled run still starts the next.
 on:
   workflow_dispatch:
-  # Every 30 minutes (GitHub may start a run late when it is busy).
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '41 */4 * * *'
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: aurora
   cancel-in-progress: false
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04   # pinned: "latest" moves to a new Ubuntu under the build
+    # ~2 min setup + 300 min loop + one last pass (<= 5 min with push retries)
+    timeout-minutes: 330
     steps:
+      - name: note the start
+        run: date +%s > "$RUNNER_TEMP/aurora-start"
       # The publish step pushes with its own token, so checkout keeps none.
       - uses: actions/checkout@v4
         with:
@@ -26,33 +36,70 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m pytest -q
-      - name: build frames
+      - name: build and publish every 10 minutes
         env:
           PYTHONUNBUFFERED: "1"
-        # Exit 2 (solar-wind gap) or 3 (no aurora anywhere) writes nothing and
-        # fails the job, so the publish step is skipped and gh-pages keeps the
-        # previous run.
-        run: python run_aurora.py --out site
-      - name: colour table
-        run: |
-          if [ -f colortable.json ]; then cp colortable.json site/; fi
-          # Serve files as they are (no Jekyll processing on GitHub Pages).
-          : > site/.nojekyll
-      - name: publish (orphan force-push to gh-pages)
-        run: |
-          if [ ! -f site/manifest.json ]; then echo "nothing built"; exit 1; fi
-          cd site
-          git init -b gh-pages -q
-          git -c user.name=pipeline -c user.email=pipeline@users.noreply.github.com add -A
-          git -c user.name=pipeline -c user.email=pipeline@users.noreply.github.com commit -q -m "aurora $(date -u +%Y%m%dT%H%MZ)"
-          # GitHub's git server sometimes answers a push with a 500; retry with
-          # backoff rather than throwing the run away (smoke pipeline, 2026-10-07).
-          for wait in 30 60 120 0; do
-            git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages && exit 0
-            [ "$wait" = 0 ] && break
-            echo "push failed; retrying in ${wait}s"
-            sleep "$wait"
-          done
-          echo "push failed after 4 tries"; exit 1
-        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Orphan force-push of site/ to gh-pages. GitHub's git server
+          # sometimes answers a push with a 500; retry with backoff rather than
+          # throwing the build away (smoke pipeline, 2026-10-07).
+          publish() {
+            if [ -f colortable.json ]; then cp colortable.json site/ || return 1; fi
+            # Serve files as they are (no Jekyll processing on GitHub Pages).
+            : > site/.nojekyll || return 1
+            (
+              cd site || exit 1
+              git init -b gh-pages -q || exit 1
+              git -c user.name=pipeline -c user.email=pipeline@users.noreply.github.com add -A || exit 1
+              git -c user.name=pipeline -c user.email=pipeline@users.noreply.github.com commit -q -m "aurora $(date -u +%Y%m%dT%H%MZ)" || exit 1
+              for wait in 20 40 0; do
+                git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages && exit 0
+                [ "$wait" = 0 ] && break
+                echo "push failed; retrying in ${wait}s"
+                sleep "$wait"
+              done
+              exit 1
+            )
+          }
+          end=$(( $(date +%s) + 5 * 3600 ))
+          passes=0
+          published=0
+          while [ "$(date +%s)" -lt "$end" ]; do
+            t0=$(date +%s)
+            passes=$(( passes + 1 ))
+            rm -rf site
+            # Exit 2 (solar-wind gap), 3 (no aurora anywhere) or 1 (a feed
+            # could not be fetched) writes nothing: gh-pages keeps the previous
+            # build and the next pass tries again.
+            set +e
+            python run_aurora.py --out site
+            rc=$?
+            set -e
+            if [ "$rc" = "0" ] && [ -f site/manifest.json ]; then
+              if publish; then
+                published=$(( published + 1 ))
+              else
+                echo "::warning::publish failed; the next pass tries again"
+              fi
+            else
+              echo "::warning::build ended with exit $rc; nothing published"
+            fi
+            left=$(( 600 - ($(date +%s) - t0) ))
+            if [ "$left" -gt 0 ]; then sleep "$left"; fi
+          done
+          echo "$published of $passes passes published"
+          # A run that published nothing is a broken feed, not a quiet one:
+          # show it red in the run list (the next run still starts below).
+          if [ "$published" = "0" ]; then echo "::error::nothing published in this run"; exit 1; fi
+      - name: start the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A run that died in setup would otherwise restart itself every
+          # minute for ever: never hand over sooner than 10 minutes in.
+          start=$(cat "$RUNNER_TEMP/aurora-start" 2>/dev/null || date +%s)
+          left=$(( 600 - ($(date +%s) - start) ))
+          if [ "$left" -gt 0 ]; then sleep "$left"; fi
+          gh workflow run aurora.yml --ref main --repo "$GITHUB_REPOSITORY"
