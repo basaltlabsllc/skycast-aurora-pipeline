@@ -1,0 +1,53 @@
+name: colortable
+# One-off build of colortable.json from NCAR GLOW (colortable/build_table.py).
+# Runs by hand only; commits colortable.json to main with the built-in token.
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: colortable
+  cancel-in-progress: false
+jobs:
+  build:
+    # Only a run dispatched from main may push to main: a run from another
+    # branch would otherwise push that branch's commits there.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # GLOW 0.981 as packaged by space-physics/ncar-glow ("ncarglow" 1.4.0,
+      # not on PyPI), pinned by commit. Only its Fortran is built and run: the
+      # Python wrapper looks up F10.7 and Ap online, and the table fixes both.
+      - uses: actions/checkout@v4
+        with:
+          repository: space-physics/ncar-glow
+          ref: 2c099fdc2bd02b69fd1c3f36e1cc603ad3d34336
+          path: ncar-glow
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: sudo apt-get update && sudo apt-get install -y gfortran cmake
+      - name: build GLOW
+        # colortable/glowpython.patch passes MAXT's own itail/fmono/emono
+        # through the driver (see README). glow.bin finds its data at
+        # <exe dir>/../data (glowpython.f90 line 75), so it is built in the
+        # package's own build/ directory, as ncarglow's build.py does.
+        run: |
+          patch -p1 -d ncar-glow < colortable/glowpython.patch
+          cmake -S ncar-glow/src/ncarglow -B ncar-glow/src/ncarglow/build
+          cmake --build ncar-glow/src/ncarglow/build --parallel
+      - run: pip install numpy==2.4.6 pytest
+      - name: build the table
+        run: python colortable/build_table.py --glow-exe ncar-glow/src/ncarglow/build/glow.bin --out colortable.json
+      - run: python -m pytest -q -rs tests/test_colortable.py
+      - name: commit colortable.json to main
+        run: |
+          git config user.name pipeline
+          git config user.email pipeline@users.noreply.github.com
+          git add colortable.json
+          if git diff --cached --quiet; then echo "colortable.json unchanged"; exit 0; fi
+          git commit -q -m "colortable.json from GLOW ($(date -u +%Y-%m-%d))"
+          git push origin HEAD:main

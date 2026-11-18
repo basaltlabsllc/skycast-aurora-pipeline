@@ -1,0 +1,58 @@
+name: aurora
+on:
+  workflow_dispatch:
+  # The schedule is off for now; runs are by hand only.
+  # schedule:
+  #   - cron: '*/30 * * * *'
+permissions:
+  contents: write
+concurrency:
+  group: aurora
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The publish step pushes with its own token, so checkout keeps none.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Python 3.11, not 3.12: see requirements.txt (nasaomnireader needs
+      # setuptools<66, whose pkg_resources does not run on 3.12).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: build frames
+        env:
+          PYTHONUNBUFFERED: "1"
+        # Exit 2 (solar-wind gap) or 3 (no aurora anywhere) writes nothing and
+        # fails the job, so the publish step is skipped and gh-pages keeps the
+        # previous run.
+        run: python run_aurora.py --out site
+      - name: colour table
+        run: |
+          if [ -f colortable.json ]; then cp colortable.json site/; fi
+          # Serve files as they are (no Jekyll processing on GitHub Pages).
+          : > site/.nojekyll
+      - name: publish (orphan force-push to gh-pages)
+        run: |
+          if [ ! -f site/manifest.json ]; then echo "nothing built"; exit 1; fi
+          cd site
+          git init -b gh-pages -q
+          git -c user.name=pipeline -c user.email=pipeline@users.noreply.github.com add -A
+          git -c user.name=pipeline -c user.email=pipeline@users.noreply.github.com commit -q -m "aurora $(date -u +%Y%m%dT%H%MZ)"
+          # GitHub's git server sometimes answers a push with a 500; retry with
+          # backoff rather than throwing the run away (smoke pipeline, 2026-10-07).
+          for wait in 30 60 120 0; do
+            git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages && exit 0
+            [ "$wait" = 0 ] && break
+            echo "push failed; retrying in ${wait}s"
+            sleep "$wait"
+          done
+          echo "push failed after 4 tries"; exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

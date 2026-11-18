@@ -1,0 +1,15 @@
+# Runner Python 3.11 (NOT 3.12): nasaomnireader reads pkg_resources.appdirs, which
+# only setuptools <= 65.x provides, and setuptools 65.x's pkg_resources needs
+# pkgutil.ImpImporter, which Python 3.12 removed.
+# numpy/scipy: the newest releases with cp311 wheels, the versions the model was measured on
+numpy==2.4.6
+scipy==1.17.1
+pytest
+setuptools<66
+matplotlib
+logbook
+requests
+geospacepy==0.2.2
+aacgmv2==2.7.1
+nasaomnireader @ git+https://github.com/lkilcommons/nasaomnireader@70f03a9bedc93387c5ba00823d199ff8b2da4c84
+ovationpyme @ git+https://github.com/lkilcommons/OvationPyme@dd774c317d628e5cc9f72d58612282c118681735

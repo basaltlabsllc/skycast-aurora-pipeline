@@ -1,0 +1,33 @@
+--- a/src/ncarglow/fortran/glowpython.f90
++++ b/src/ncarglow/fortran/glowpython.f90
+@@ -1,4 +1,5 @@
+ program python_glow
++! Modified by SkyCast 2026-11-17 (colortable/glowpython.patch): MAXT itail/fmono/emono arguments.
+ ! Basic single-processor driver for the GLOW model.
+ ! Uses MSIS/IRI for input.
+ ! Runs GLOW for designated inputs once, or multiple times.
+@@ -147,6 +148,13 @@
+ 
+   call argv(10, ec) ! characteristic energy [eV]
+   call argv(11, nbins) ! number of energy bins
++  !> SkyCast change, 2026-11-17: optional arguments 12-14 pass MAXT's own
++  !> itail, fmono and emono (previously fixed at 0 above).
++  if (command_argument_count() >= 14) then
++    call argv(12, itail)
++    call argv(13, fmono)
++    call argv(14, emono)
++  endif
+   allocate(ener(nbins), del(nbins), phitop(nbins))
+ 
+   !> setup energy grid
+@@ -154,7 +162,9 @@
+ 
+   !! Call MAXT to put auroral electron flux specified into phitop array:
+   phitop(:) = 0.
+-  if (ef>.001 .and. ec>1.) call maxt (ef,ec,ener,del,nbins,itail,fmono,emono,phitop)
++  !> SkyCast change, 2026-11-17: also call MAXT for a monoenergetic flux alone.
++  if ((ef>.001 .and. ec>1.) .or. (fmono>0. .and. ec>1.)) &
++    call maxt (ef,ec,ener,del,nbins,itail,fmono,emono,phitop)
+ end select
+ 
+ !! Call CGLOW_INIT (module CGLOW) to set array dimensions and allocate use-associated variables:
