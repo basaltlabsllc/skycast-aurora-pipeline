@@ -54,3 +54,20 @@ def test_the_watchdog_dispatches_only_when_no_run_is_live():
     assert 'select(.status != "completed")' in y
     assert 'if [ "$live" = "0" ]; then' in y
     assert "gh workflow run aurora.yml --ref main" in y
+
+
+def test_each_pass_keeps_the_frames_of_the_last_good_build():
+    y = _read("aurora.yml")
+    loop = y[y.index("while ["):y.index("done\n          echo")]
+    assert "python run_aurora.py --out site --prev prev" in loop
+    # prev/ is replaced only inside the branch a good build takes
+    good = loop[loop.index('if [ "$rc" = "0" ]'):loop.index("\n            else\n")]
+    assert "rm -rf site/.git prev\n" in good and "mv site prev" in good
+    assert "prev" not in loop[loop.index("\n            else\n"):]
+
+
+def test_a_new_run_starts_its_history_from_the_published_site():
+    y = _read("aurora.yml")
+    head = y[:y.index("while [")]
+    assert 'python fetch_prev.py --base "$PAGES_BASE" --out prev' in head
+    assert 'PAGES_BASE="https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}"' in head

@@ -1,6 +1,6 @@
 """Fetch SWPC's live solar wind, run OVATION Prime per 10-min frame, write a site.
 
-  python run_aurora.py --out site
+  python run_aurora.py --out site [--prev DIR]
 
 Writes <out>/manifest.json and <out>/frames/<YYYYMMDDTHHMMZ>.aur1, prints the
 frame count, bytes and seconds. Exit codes, each with nothing written:
@@ -8,6 +8,9 @@ frame count, bytes and seconds. Exit codes, each with nothing written:
      implausible L1 -> Earth delay
   3  every frame's energy flux is zero
   1  anything else (a feed fetch failed, <out> is not empty, ...)
+--prev DIR names an earlier build's site (manifest.json + frames/): its frames
+from before this run's window are kept, back to 6 hours before the run
+(pipeline/site.py merge_history). A missing or unreadable DIR keeps nothing.
 "Nothing written" is literal: the site is built in memory, written to a temp dir
 beside <out>, and renamed into place only after every frame succeeded.
 """
@@ -82,9 +85,31 @@ def _write_site(out, manifest, files):
         raise
 
 
+def _with_history(manifest, files, prev):
+    """The build extended with the frames kept from the site in `prev`."""
+    try:
+        with open(os.path.join(prev, "manifest.json")) as f:
+            prev_manifest = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"no earlier build to keep frames from ({e})", file=sys.stderr)
+        return manifest, files
+
+    def read_prev(path):
+        # path is site.frame_path(t), never text from the earlier manifest
+        try:
+            with open(os.path.join(prev, path), "rb") as f:
+                data = f.read()
+        except OSError:
+            return None
+        return data if data[:2] == b"\x1f\x8b" else None     # a gzip stream
+
+    return site.merge_history(manifest, files, prev_manifest, read_prev)
+
+
 def main(argv=None, fetch=fetch_feeds, now=None, run_frame=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True)
+    ap.add_argument("--prev")
     args = ap.parse_args(argv)
     if os.path.exists(args.out) and (not os.path.isdir(args.out) or os.listdir(args.out)):
         print(f"{args.out} exists and is not an empty directory", file=sys.stderr)
@@ -102,12 +127,16 @@ def main(argv=None, fetch=fetch_feeds, now=None, run_frame=None):
     except site.NoAurora as e:
         print(f"nothing written: {e}", file=sys.stderr)
         return EXIT_NO_AURORA
+    built = len(files)
+    if args.prev:
+        manifest, files = _with_history(manifest, files, args.prev)
     _write_site(args.out, manifest, files)
     frame_bytes = sum(len(b) for b in files.values())
     total = frame_bytes + os.path.getsize(os.path.join(args.out, "manifest.json"))
     print(f"{len(files)} frames, {frame_bytes} bytes of frames "
           f"({frame_bytes / len(files):.0f} per frame), {total} bytes in all, "
-          f"{manifest['windowStart']} .. {manifest['windowEnd']}, "
+          f"{manifest['windowStart']} .. {manifest['windowEnd']} "
+          f"({built} built, {len(files) - built} kept), "
           f"spacecraft {manifest['spacecraft']}, {time.monotonic() - t0:.1f} s")
     return 0
 

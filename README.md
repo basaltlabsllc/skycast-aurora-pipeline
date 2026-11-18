@@ -54,6 +54,16 @@ Two nets restart a broken chain: the workflow's own 4-hourly cron and
 `.github/workflows/aurora-watchdog.yml`, which every hour dispatches a run
 only when none is queued or running.
 
+**History.** The feed holds the last six hours. A build makes only its own
+window (the last hour, on to the solar wind's arrival); `merge_history`
+(`pipeline/site.py`) then keeps every frame the build before it published that
+has left that window, byte for byte as it was last built, back to six hours
+before the run. The manifest's `windowStart` is the oldest kept frame and
+`liveStart` is where this build's own frames begin. The history never has a
+hole: it ends at the first missing frame, so after an outage longer than a
+build's window it starts again. A new run reads the earlier frames back from
+GitHub Pages (`fetch_prev.py`).
+
 Live run, 2026-11-18T00:55:57Z (this Mac, Python 3.11, fetch included):
 13 frames, 771,395 bytes of frames (59,338 per frame on average, 58,931–59,690),
 773,383 bytes with the manifest, 10.8 s. Spacecraft SOLAR1, L1→Earth delay

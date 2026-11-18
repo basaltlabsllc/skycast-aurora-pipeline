@@ -62,6 +62,13 @@ jobs:
               exit 1
             )
           }
+          # Six hours of history: each build keeps the frames earlier builds
+          # published (pipeline/site.py merge_history). prev/ is the last good
+          # build; a new run starts it from what gh-pages serves.
+          PAGES_BASE="https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}"
+          rm -rf prev
+          python fetch_prev.py --base "$PAGES_BASE" --out prev \
+            || echo "::warning::no earlier frames fetched; the history starts again"
           end=$(( $(date +%s) + 5 * 3600 ))
           passes=0
           published=0
@@ -73,7 +80,7 @@ jobs:
             # could not be fetched) writes nothing: gh-pages keeps the previous
             # build and the next pass tries again.
             set +e
-            python run_aurora.py --out site
+            python run_aurora.py --out site --prev prev
             rc=$?
             set -e
             if [ "$rc" = "0" ] && [ -f site/manifest.json ]; then
@@ -82,6 +89,10 @@ jobs:
               else
                 echo "::warning::publish failed; the next pass tries again"
               fi
+              # Published or not, this build is the newest: the next pass keeps
+              # its frames. A failed build leaves prev/ as it was.
+              rm -rf site/.git prev
+              mv site prev
             else
               echo "::warning::build ended with exit $rc; nothing published"
             fi
