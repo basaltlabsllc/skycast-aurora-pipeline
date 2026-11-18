@@ -39,9 +39,8 @@ succeeded; `--out` must be absent or empty):
 | 3 | every frame's energy flux is below the encoder's floor (0.01 erg cm⁻² s⁻¹) in all three types, so every frame would be blank |
 | 1 | anything else (a feed could not be fetched, `--out` not empty, …) |
 
-The GitHub Actions workflow (`.github/workflows/aurora.yml`) runs by hand only
-(`workflow_dispatch`); the 30-minute schedule is commented out for
-now. It installs requirements, runs the tests, runs `run_aurora.py --out
+The GitHub Actions workflow (`.github/workflows/aurora.yml`) runs every 30
+minutes and can also be started by hand (`workflow_dispatch`). It installs requirements, runs the tests, runs `run_aurora.py --out
 site`, copies `colortable.json` into `site/` when the repo has one, and
 force-pushes `site/` as an orphan commit to `gh-pages` with the built-in
 `GITHUB_TOKEN` (the smoke pipeline's publish step). A failed run skips the
