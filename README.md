@@ -54,10 +54,10 @@ Two nets restart a broken chain: the workflow's own 4-hourly cron and
 `.github/workflows/aurora-watchdog.yml`, which every hour dispatches a run
 only when none is queued or running.
 
-**History.** The feed holds the last six hours. A build makes only its own
+**History.** The feed holds the last ten hours. A build makes only its own
 window (the last hour, on to the solar wind's arrival); `merge_history`
 (`pipeline/site.py`) then keeps every frame the build before it published that
-has left that window, byte for byte as it was last built, back to six hours
+has left that window, byte for byte as it was last built, back to ten hours
 before the run. The manifest's `windowStart` is the oldest kept frame and
 `liveStart` is where this build's own frames begin. The history never has a
 hole: it ends at the first missing frame, so after an outage longer than a

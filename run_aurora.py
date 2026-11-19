@@ -9,7 +9,7 @@ frame count, bytes and seconds. Exit codes, each with nothing written:
   3  every frame's energy flux is zero
   1  anything else (a feed fetch failed, <out> is not empty, ...)
 --prev DIR names an earlier build's site (manifest.json + frames/): its frames
-from before this run's window are kept, back to 6 hours before the run
+from before this run's window are kept, back to 10 hours before the run
 (pipeline/site.py merge_history). A missing or unreadable DIR keeps nothing.
 "Nothing written" is literal: the site is built in memory, written to a temp dir
 beside <out>, and renamed into place only after every frame succeeded.

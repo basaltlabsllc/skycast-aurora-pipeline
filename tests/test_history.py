@@ -1,4 +1,4 @@
-"""Six hours of history: a build keeps the frames earlier builds published."""
+"""Ten hours of history: a build keeps the frames earlier builds published."""
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -63,10 +63,10 @@ def test_a_later_build_keeps_the_frames_that_left_its_window():
     assert m["frames"][0] == old_m["frames"][0]            # swUsedTo travels with it
 
 
-def test_history_stops_six_hours_before_the_run():
-    m, files = _chain(60)                                   # 9 h 50 min of builds
-    last = RUN + timedelta(minutes=590)
-    assert m["windowStart"] == site.iso(site.floor_step(last.timestamp() - 6 * 3600))
+def test_history_stops_ten_hours_before_the_run():
+    m, files = _chain(90)                                   # 14 h 50 min of builds
+    last = RUN + timedelta(minutes=890)
+    assert m["windowStart"] == site.iso(site.floor_step(last.timestamp() - 10 * 3600))
     assert np.all(np.diff(_ts(m)) == 600)
     assert len(files) == len(m["frames"])
 

@@ -3,7 +3,7 @@
   python fetch_prev.py --base https://<owner>.github.io/<repo> --out prev
 
 A runner starts with an empty disk; this gives the first build of a run the
-frames the previous run published, so the 6 hours of history carry across
+frames the previous run published, so the 10 hours of history carry across
 runs. Writes <out>/manifest.json and each frame the manifest names whose path
 is exactly the pipeline's own name for its time. A frame that cannot be
 fetched is skipped (history then starts after it). Exit 1 when the manifest

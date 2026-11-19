@@ -62,7 +62,7 @@ jobs:
               exit 1
             )
           }
-          # Six hours of history: each build keeps the frames earlier builds
+          # Ten hours of history: each build keeps the frames earlier builds
           # published (pipeline/site.py merge_history). prev/ is the last good
           # build; a new run starts it from what gh-pages serves.
           PAGES_BASE="https://${GITHUB_REPOSITORY%%/*}.github.io/${GITHUB_REPOSITORY#*/}"

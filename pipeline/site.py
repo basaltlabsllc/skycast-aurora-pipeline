@@ -25,7 +25,7 @@ from pipeline import encode, solarwind
 
 STEP_S = 600
 WINDOW_BACK_S = 3600
-HISTORY_S = 6 * 3600
+HISTORY_S = 10 * 3600   # Erik, 2026-11-19: "i want to go back like 10 hours"
 AVERAGE_S = solarwind.N_HOURS_IN_AVERAGE * 3600
 OVATIONPYME_COMMIT = "dd774c317d628e5cc9f72d58612282c118681735"
 MODEL = f"ovation-prime-2010 (OvationPyme {OVATIONPYME_COMMIT})"
