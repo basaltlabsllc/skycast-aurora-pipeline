@@ -17,7 +17,7 @@ import sys
 import time
 import urllib.request
 
-from pipeline import site
+from pipeline import noaa, site
 
 
 def _get(url, tries=3):
@@ -68,7 +68,27 @@ def main(argv=None, get=_get):
         with open(os.path.join(args.out, path), "wb") as f:
             f.write(data)
         got += 1
-    print(f"{got} of {len(frames)} published frames fetched")
+    maps = manifest.get("noaa") if isinstance(manifest, dict) else None
+    maps = maps.get("maps") if isinstance(maps, dict) else None
+    got_maps, n_maps = 0, len(maps) if isinstance(maps, list) else 0
+    for e in maps if isinstance(maps, list) else []:
+        obs = site.from_iso(e.get("obs")) if isinstance(e, dict) else None
+        fcst = site.from_iso(e.get("fcst")) if isinstance(e, dict) else None
+        # Only the pipeline's own name for those times is ever fetched or written.
+        if obs is None or fcst is None or e.get("path") != noaa.map_path(int(obs), int(fcst)):
+            continue
+        path = noaa.map_path(int(obs), int(fcst))
+        try:
+            data = get(f"{base}/{path}")
+        except RuntimeError as err:
+            print(f"skipped {path}: {err}", file=sys.stderr)
+            continue
+        os.makedirs(os.path.join(args.out, "noaa"), exist_ok=True)
+        with open(os.path.join(args.out, path), "wb") as f:
+            f.write(data)
+        got_maps += 1
+    print(f"{got} of {len(frames)} published frames fetched, "
+          f"{got_maps} of {n_maps} NOAA maps")
     return 0
 
 

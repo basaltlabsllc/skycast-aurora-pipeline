@@ -8,9 +8,12 @@ frame count, bytes and seconds. Exit codes, each with nothing written:
      implausible L1 -> Earth delay
   3  every frame's energy flux is zero
   1  anything else (a feed fetch failed, <out> is not empty, ...)
---prev DIR names an earlier build's site (manifest.json + frames/): its frames
-from before this run's window are kept, back to 10 hours before the run
-(pipeline/site.py merge_history). A missing or unreadable DIR keeps nothing.
+--prev DIR names an earlier build's site (manifest.json + frames/ + noaa/): its
+frames from before this run's window are kept, back to 10 hours before the run
+(pipeline/site.py merge_history), and so are NOAA's aurora maps earlier builds
+recorded (pipeline/noaa.py). A missing or unreadable DIR keeps nothing.
+Each build also reads NOAA's newest OVATION map and records it under noaa/; a
+map that cannot be fetched or read is left out (the build goes on without it).
 "Nothing written" is literal: the site is built in memory, written to a temp dir
 beside <out>, and renamed into place only after every frame succeeded.
 """
@@ -27,7 +30,7 @@ import urllib.request
 import zlib
 from datetime import datetime, timezone
 
-from pipeline import site, solarwind
+from pipeline import noaa, site, solarwind
 
 FEEDS = {
     "wind": "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json",
@@ -63,6 +66,15 @@ def fetch_feeds():
     return tuple(_get_json(FEEDS[k]) for k in ("wind", "mag", "propagated"))
 
 
+def fetch_noaa():
+    """SWPC's newest OVATION map as JSON, or None when it cannot be read."""
+    try:
+        return _get_json(noaa.URL)
+    except RuntimeError as e:
+        print(f"NOAA's aurora map not fetched: {e}", file=sys.stderr)
+        return None
+
+
 def _write_site(out, manifest, files):
     """Write everything into a temp dir beside `out`, then rename it to `out`."""
     out = os.path.abspath(out)
@@ -72,6 +84,7 @@ def _write_site(out, manifest, files):
     try:
         os.makedirs(os.path.join(tmp, "frames"))
         for path, data in files.items():
+            os.makedirs(os.path.dirname(os.path.join(tmp, path)), exist_ok=True)
             with open(os.path.join(tmp, path), "wb") as f:
                 f.write(data)
         with open(os.path.join(tmp, "manifest.json"), "w") as f:
@@ -85,17 +98,19 @@ def _write_site(out, manifest, files):
         raise
 
 
-def _with_history(manifest, files, prev):
-    """The build extended with the frames kept from the site in `prev`."""
+def _prev_site(prev):
+    """(earlier manifest or None, read_prev) for the site in `prev` (None: no site)."""
+    if not prev:
+        return None, lambda path: None
     try:
         with open(os.path.join(prev, "manifest.json")) as f:
             prev_manifest = json.load(f)
     except (OSError, ValueError) as e:
         print(f"no earlier build to keep frames from ({e})", file=sys.stderr)
-        return manifest, files
+        return None, lambda path: None
 
     def read_prev(path):
-        # path is site.frame_path(t), never text from the earlier manifest
+        # path is site.frame_path(t) or noaa.map_path(...), never text from the earlier manifest
         try:
             with open(os.path.join(prev, path), "rb") as f:
                 data = f.read()
@@ -103,10 +118,10 @@ def _with_history(manifest, files, prev):
             return None
         return data if data[:2] == b"\x1f\x8b" else None     # a gzip stream
 
-    return site.merge_history(manifest, files, prev_manifest, read_prev)
+    return prev_manifest, read_prev
 
 
-def main(argv=None, fetch=fetch_feeds, now=None, run_frame=None):
+def main(argv=None, fetch=fetch_feeds, now=None, run_frame=None, fetch_map=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--out", required=True)
     ap.add_argument("--prev")
@@ -128,15 +143,23 @@ def main(argv=None, fetch=fetch_feeds, now=None, run_frame=None):
         print(f"nothing written: {e}", file=sys.stderr)
         return EXIT_NO_AURORA
     built = len(files)
-    if args.prev:
-        manifest, files = _with_history(manifest, files, args.prev)
+    prev_manifest, read_prev = _prev_site(args.prev)
+    if prev_manifest is not None:
+        manifest, files = site.merge_history(manifest, files, prev_manifest, read_prev)
+    n_frames = len(files)
+    latest = (fetch_map or fetch_noaa)()
+    manifest, files = noaa.add_maps(manifest, files, latest, prev_manifest, read_prev,
+                                    log=lambda s: print(s, file=sys.stderr))
     _write_site(args.out, manifest, files)
-    frame_bytes = sum(len(b) for b in files.values())
-    total = frame_bytes + os.path.getsize(os.path.join(args.out, "manifest.json"))
-    print(f"{len(files)} frames, {frame_bytes} bytes of frames "
-          f"({frame_bytes / len(files):.0f} per frame), {total} bytes in all, "
+    frame_bytes = sum(len(b) for p, b in files.items() if p.startswith("frames/"))
+    map_bytes = sum(len(b) for p, b in files.items() if p.startswith("noaa/"))
+    n_maps = len(files) - n_frames
+    total = frame_bytes + map_bytes + os.path.getsize(os.path.join(args.out, "manifest.json"))
+    print(f"{n_frames} frames, {frame_bytes} bytes of frames "
+          f"({frame_bytes / n_frames:.0f} per frame), "
+          f"{n_maps} NOAA maps, {map_bytes} bytes, {total} bytes in all, "
           f"{manifest['windowStart']} .. {manifest['windowEnd']} "
-          f"({built} built, {len(files) - built} kept), "
+          f"({built} built, {n_frames - built} kept), "
           f"spacecraft {manifest['spacecraft']}, {time.monotonic() - t0:.1f} s")
     return 0
 

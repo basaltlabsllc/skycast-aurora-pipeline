@@ -64,6 +64,19 @@ hole: it ends at the first missing frame, so after an outage longer than a
 build's window it starts again. A new run reads the earlier frames back from
 GitHub Pages (`fetch_prev.py`).
 
+**NOAA's chance history.** Each build also reads NOAA's own OVATION map
+(`ovation_aurora_latest.json`, the app's "% chance") and records it as
+`noaa/<obs>_<fcst>.ova1`: a gzip of NOAA's 360 x 181 whole percents, exactly as
+published (`pipeline/noaa.py`; 3,564 bytes for the 2026-11-28 17:17Z map). The
+manifest's `noaa.maps` names every map whose forecast time is within the same
+ten hours (`site.HISTORY_S`), oldest first: about 60 maps, ~215 kB, at one
+build per 10 minutes. Unlike the frames, the maps may have holes (a build that
+could not read NOAA's file records none); the app shows no number for a time
+no map covers. A map NOAA publishes with a missing, doubled or fractional cell
+is not recorded. SWPC's pages are NWS pages (their footer Disclaimer is
+weather.gov/disclaimer): public domain, so long as a copy is not presented as
+NOAA's official material or as endorsed by NOAA.
+
 Live run, 2026-11-18T00:55:57Z (this Mac, Python 3.11, fetch included):
 13 frames, 771,395 bytes of frames (59,338 per frame on average, 58,931–59,690),
 773,383 bytes with the manifest, 10.8 s. Spacecraft SOLAR1, L1→Earth delay
